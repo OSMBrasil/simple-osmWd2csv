@@ -4,15 +4,27 @@ Simplest and stupid algoritm to convert big big OSM files into **simple CSV file
 
 This project is suitable for *OSM beginners*, for Unix *agile* pipeline lovers... And for those who do not trust anyone: to *fact checking*.
 
-The target of the "OSM Wikidata-elements CSV file" is to feed PostgreSQL (or SQLite) with complete and reliable data. See eg. [semantic-bridge](https://github.com/OSMBrasil/semantic-bridge).
+The target of the "OSM Wikidata-elements CSV file" is to feed PostgreSQL (or SQLite) with complete and reliable data. See eg. [Semantic-bridge OSM-Wikidata](https://github.com/OSMBrasil/semantic-bridge) project.
 
 ## Basic results and aims
 
 This project also define two simple data-interchange formats for tests and benchmark of OSM-Wikidata tools.
 
-**`*_wdDump.csv` format**: is the best way to dump or **interchange OSM-Wikidata "bigdata"**. Is a standard CSV file with columns `<osm_type,osm_id,wd_ids,wd_member_ids>`. <br/>The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), abbreviated as a letter ("n" for node, "w" for way and "r" for relation); the second its real ID, in the date of the capture; the third its Wikidata ID (a *qid* without the "Q" prefix), sometomes no ID, sometimes more tham one ID; and the fourth, `wd_member_ids`, is a set of space-separed Wikidata IDs of member-elements, that eventually can be assumed as self (the parent element) Wikidata ID.<br/>Is the final format of the parsing process. Consumes **~0.1% of the XML (`.osm`) format** and its zipped file also ~0.1% of the  `.osm.pbf` format.
+**`.wdDump.csv` format**: is the best way to dump, **analyse or interchange OSM-Wikidata "bigdata"**. Is a [standard CSV](https://en.wikipedia.org/wiki/Comma-separated_values) file with columns `<osm_type,osm_id,wd_ids,wd_member_ids>`. <br/>The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), abbreviated as a letter ("n" for node, "w" for way and "r" for relation); the second its real ID, in the date of the capture; the third its Wikidata ID (a *qid* without the "Q" prefix), sometimes no ID, sometimes more tham one ID; and the fourth, `wd_member_ids`, is a set of space-separed Wikidata IDs of member-elements, that eventually can be assumed as self (parent element). The `.wdDump.csv` is the final format of the parsing process described also in this repo. <br/>Consumes **~0.01% of the XML (`.osm`) format**,  of the wikidata-filtered file, and its zipped file ~0.4% of the  `.osm.pbf` format.  In CPU time to process or analyse is also a big gain... And for data-analists is a **standard source of the truth** at any SQL tool. Examples:
 
-**`*_wdDump.raw.csv` format**: a standard CSV file with columns `<osm_type,osm_id,otherIDs>`. The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), the second its ID, and `otherIDs` a set of space-separed IDs (node-IDs, way-IDs or Wikidata-IDs). <br/>Is a intermediary format, with a lot of redundant lines and IDs. Is easy to interchange or feed SQL for final parsing.<br/>Consumes ~10% of the XML (`.osm`) format, or 30% of the `.osm.pbf`. <br/>Examples: **1.** with [GE](http://download.geofabrik.de/europe/germany.html) files, reduce 1.6G of `.osm` to 143M of `.raw.csv`, so ~9%; reduce 245kb of `.osm.pbf` to 69Kb of `.raw.csv.zip`; **2.** with [LI](https://download.geofabrik.de/europe/liechtenstein.html) files, reduce 3,3Mb of `.osm` to 313kb of `.raw.csv`, so ~10%; reduce 245kb of `.osm.pbf` to 69Kb of `.raw.csv.zip`, so 28%.
+file name | file size | file %s | description
+----------|-----------|---------|--------
+GE.osm.pbf     | 2.8G      | 100%    |original file, [GE](http://download.geofabrik.de/europe/germany.html), compressed `.osm`
+GE.wikidata.osm.pbf | 122M  |100% (4% of original)| extracted by `osmium tags-filter`
+GE.wikidata.osm | **1.6G** = 1638M |100% | XML expanded from pbf by osmium
+**GE.wdDump.csv**       | **1.5M** | 0,0093% of osm| final format for wikidata tags
+GE.wdDump.csv.zip   | 451K = 0.44M |0,4% of osm.pbf, ~30% of csv | csv compressed
+LI.osm.pbf     | 2.2M      | 100%    |original file, [LI](http://download.geofabrik.de/europe/liechtenstein.html), compressed `.osm`
+LI.wikidata.osm.pbf | 245kb = 0,24M |100% (11% of original)| extracted by `osmium tags-filter`
+LI.wikidata.osm     | **3,3M** |100% | XML expanded from pbf by osmium
+**LI.wdDump.csv**       | **2K** = 0,002M |  0,8% of osm | final format for wikidata tags
+
+**`.wdDump.raw.csv` format**: a standard CSV file with columns `<osm_type,osm_id,otherIDs>`.  <br/>Is a intermediary format, with a lot of redundant lines and IDs. Is easy to interchange or feed SQL for final parsing.<br/>The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), the second its ID, and `otherIDs` a set of space-separed IDs (node-IDs, way-IDs or Wikidata-IDs).<br/>Consumes ~10% of the XML (`.osm`) format.
 
 So, the following algoritms are also *reference specifications*  of these file formats:
 
@@ -20,7 +32,7 @@ So, the following algoritms are also *reference specifications*  of these file f
 
 * XML parser, [osmWd2csv.php](src/osmWd2csv.php): the simplest and stupid algoritm to convert pre-processed OSM into `*_wdDump.raw.csv` format. Good for fact checking (auting process) or statrting point for adaptations.<br/>The ideal algoritm will be C or C++ doing the job of both, pre-parser and parser. Will be easy also to include in the parse the "SQL processing", because it only checks IDs and  refs.
 
-* SQL processing [osmWd_raw-transform.sql](src/osmWd_raw-transform.sql): transforms `*_wdDump.raw.csv` into `*_wdDump.csv`. Is not necessary to be a SQL algoritm, but is the  simplest and most standard way to [specify](https://en.wikipedia.org/wiki/Formal_specification) and test.
+* SQL processing [osmWd_raw-transform.sql](src/osmWd_raw-transform.sql): transforms `*_wdDump.raw.csv` into `*_wdDump.csv`. Is not necessary to be a SQL algoritm, but SQL is the  simplest and most popular standard way to [specify procedures](https://en.wikipedia.org/wiki/Formal_specification) and test.
 
 ## Presentation
 
