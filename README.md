@@ -67,6 +67,8 @@ There are some examples at [example.md](example.md).
 
 * `sh src/osmWd2csv_pre.sh < wikidata-liechtenstein.osm | php src/osmWd2csv.php > LI_wdDump.csv` the useful thing!
 
+* ... for the complete process, with SQL outputing `LI_wdDump.csv`, see ["example 3 - parsing"](example.md#example-3---parsing).
+
 ## License
 
 [&#160; Contents, data and software of this project are dedicated to<br/> ![](assets/CC0-logo-200px.png) ](LICENSE.md)

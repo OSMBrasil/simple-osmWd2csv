@@ -111,4 +111,42 @@ Counting elements (elapsed time: 3,24 minutes)
  num. of ID-refs = 0
 ```
 ### Example 3 - parsing
-...
+
+```
+sh src/osmWd2csv_pre.sh < data/wikidata-liechtenstein.osm \
+  | php src/osmWd2csv.php > data/LI_wdDump.raw.csv
+
+cp data/LI_wdDump.raw.csv /tmp
+
+psql -U postgres work < src/osmWd_lib.sql
+
+  CREATE FUNCTION
+  CREATE FUNCTION
+  CREATE FUNCTION
+  DROP AGGREGATE
+  CREATE AGGREGATE
+
+psql -U postgres work < src/osmWd_raw-transform.sql
+  ...
+  DROP SCHEMA
+  CREATE SCHEMA
+  CREATE FOREIGN TABLE
+  SELECT 789
+  CREATE INDEX
+  CREATE INDEX
+  CREATE FUNCTION
+  CREATE FUNCTION
+  CREATE FUNCTION
+  DELETE 0
+  UPDATE 751
+  UPDATE 55
+  UPDATE 55
+  UPDATE 789
+  DELETE 687
+  CREATE VIEW
+  COPY 7
+  COPY 95
+
+cp /tmp/LI_wdDump.csv  data
+cp /tmp/LI_noWdId.csv  data
+```
