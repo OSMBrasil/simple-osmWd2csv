@@ -121,4 +121,4 @@ COPY (
 
 COPY (
   SELECT * FROM wdosm.li_output WHERE wd_ids is NOT null
-) TO '/tmp/LI_final.csv' CSV HEADER;
+) TO '/tmp/LI_wdDump.csv' CSV HEADER;
