@@ -57,7 +57,7 @@ CREATE FUNCTION wdosm.n_wd_ids(  p_ids bigint[] ) RETURNS bigint[] AS $f$
   WHERE osm_type='n' AND osm_id IN (select unnest($1))
 $f$ language SQL IMMUTABLE;
 
-CREATE or replace FUNCTION wdosm.w_wd_ids(  p_ids bigint[] , p_type text ) RETURNS bigint[] AS $f$
+CREATE FUNCTION wdosm.w_wd_ids(  p_ids bigint[] , p_type text ) RETURNS bigint[] AS $f$
   SELECT CASE WHEN x='{}'::bigint[] THEN NULL ELSE x END
   FROM (
     SELECT array_agg_mult(wd_ids) as x
@@ -66,6 +66,9 @@ CREATE or replace FUNCTION wdosm.w_wd_ids(  p_ids bigint[] , p_type text ) RETUR
   ) t
 $f$ language SQL IMMUTABLE;
 
+CREATE FUNCTION wdosm.wd_id_format(  p_ids bigint[] ) RETURNS text AS $f$
+  SELECT 'Q'||array_to_string($1,' Q')
+$f$ language SQL IMMUTABLE;
 
 
 ---------------
@@ -103,19 +106,19 @@ DELETE FROM wdosm.li_raw2 WHERE member_wd_ids IS NULL AND wd_ids IS NULL;
 -----
 -- PRODUTOS!
 
-CREATE VIEW wdosm.li_no_wdid AS
- SELECT osm_type,osm_id,'Q'||array_to_string(member_wd_ids,' Q') as wd_member_ids
+CREATE VIEW wdosm.li_output AS
+ SELECT osm_type, osm_id,
+   wdosm.wd_id_format(wd_ids) as wd_ids,
+   wdosm.wd_id_format(member_wd_ids) as wd_member_ids
  FROM wdosm.li_raw2
- WHERE wd_ids is null
- ORDER BY 1,2
-;
-CREATE VIEW wdosm.li_final AS
- SELECT osm_type,osm_id,wd_ids,'Q'||array_to_string(member_wd_ids,' Q') as wd_member_ids
- FROM wdosm.li_raw2
- WHERE wd_ids is NOT null
  ORDER BY 1,2
 ;
 
+COPY (
+  SELECT osm_type, osm_id, wd_member_ids
+  FROM wdosm.li_output WHERE wd_ids is null
+) TO '/tmp/LI_noWdId.csv' CSV HEADER;
 
-COPY (SELECT * FROM wdosm.li_no_wdid) TO '/tmp/LI_noWdId.csv' CSV HEADER;
-COPY (SELECT * FROM wdosm.li_final) TO '/tmp/LI_final.csv' CSV HEADER;
+COPY (
+  SELECT * FROM wdosm.li_output WHERE wd_ids is NOT null
+) TO '/tmp/LI_final.csv' CSV HEADER;
