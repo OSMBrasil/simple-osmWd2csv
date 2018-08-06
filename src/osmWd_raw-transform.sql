@@ -107,11 +107,13 @@ CREATE VIEW wdosm.li_no_wdid AS
  SELECT osm_type,osm_id,'Q'||array_to_string(member_wd_ids,' Q') as wd_member_ids
  FROM wdosm.li_raw2
  WHERE wd_ids is null
+ ORDER BY 1,2
 ;
 CREATE VIEW wdosm.li_final AS
  SELECT osm_type,osm_id,wd_ids,'Q'||array_to_string(member_wd_ids,' Q') as wd_member_ids
  FROM wdosm.li_raw2
  WHERE wd_ids is NOT null
+ ORDER BY 1,2
 ;
 
 
