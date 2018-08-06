@@ -201,3 +201,51 @@ r,1717086,Q896564:21
 r,1717088,Q896564:56
 ...
 ```
+
+## Example 4 - analysing by SQL
+
+GE case of repeatead wd_ids in many elements.
+
+```sql
+SELECT wd_ids[1] as wd_id, osm_type, 
+       count(*) n, max(osm_id) as osm_id_sample
+FROM wdosm.li_raw2
+GROUP BY 1,2 HAVING count(*)>10
+ORDER BY 3 desc
+```
+
+wd_id   | osm_type |  n  | osm_id_sample
+--------|----------|-----|---------------
+ 319837 | w        | 197 |     539934418
+ 315548 | w        | 162 |     418178590
+  41150 | r        | 157 |       8448513
+1699351 | w        | 125 |     481282152
+ 314003 | n        | 125 |    4735136612
+1642426 | w        | 112 |     506257563
+ 572498 | w        | 112 |     376709253
+1796040 | n        | 104 |    5760272821
+ 896564 | w        |  95 |     518074303
+1562222 | w        |  73 |     415878211
+ 450204 | w        |  72 |     442768996
+ 884374 | w        |  59 |     603119891
+1302868 | w        |  58 |     536625582
+43988627 | w        |  54 |     384662114
+ 564867 | w        |  53 |     585245679
+ 870831 | n        |  51 |    3656900028
+1786999 | w        |  51 |     355489818
+...|...|...|...
+
+Completing the analisis comparing with `GE_noWdId.csv` or its  query. Examples:
+
+`grep Q319837 data/GE_noWdId.csv` shows that there are no envelope candidate.
+
+`grep Q315548` shows that there are some partial enveloping,
+
+```csv
+r,139020,Q315548:33
+r,139021,Q315548:37
+r,1988255,Q315548:86
+r,1988258,Q315548:84
+r,1988261,Q315548:49
+r,1988263,Q315548:50
+```
