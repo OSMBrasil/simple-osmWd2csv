@@ -74,6 +74,14 @@ CREATE FUNCTION wdosm.wd_id_format(  p_ids JSONb ) RETURNS text AS $f$
   FROM jsonb_each_text($1)
 $f$ language SQL IMMUTABLE;
 
+CREATE FUNCTION wdosm.wd_id_unformat( p_list text ) RETURNS JSONb AS $f$
+  -- reverts wdosm.wd_id_format()
+  SELECT jsonb_object_agg(substr(x[1],2), x[2]::int)
+  FROM (
+    SELECT regexp_split_to_array(item, ':')	as x
+    FROM regexp_split_to_table($1, '[\s,;\|]+') t2(item)
+  ) t
+$f$ language SQL IMMUTABLE;
 
 ---------------
 --- ALGORITMO:
