@@ -33,11 +33,11 @@ CREATE TABLE wdosm.li_raw2 AS
   FROM (
     SELECT osm_type, osm_id,
            substr(ref,1,1) as ref_type,
-           substr(ref,2)::bigint as ref_id
+           CASE WHEN not(ref ~ '^[a-zA-Z][0-9]+$') THEN NULL::bigint ELSE substr(ref,2)::bigint END as ref_id
     FROM (
       SELECT substr(osm_type,1,1)::char as osm_type,
         osm_id::bigint as osm_id,
-        regexp_split_to_table("otherIDs", ' ') as ref
+        regexp_split_to_table("otherIDs", '[\s,;:\-]+') as ref
       FROM wdosm.li_raw
     ) t2
   ) t
