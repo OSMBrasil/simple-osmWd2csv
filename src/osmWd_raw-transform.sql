@@ -29,7 +29,7 @@ CREATE TABLE wdosm.li_raw2 AS
      array_distinct_sort( array_agg(CASE WHEN ref_type='w' THEN ref_id ELSE NULL END) ) w_refs,
      array_distinct_sort( array_agg(CASE WHEN ref_type='r' THEN ref_id ELSE NULL END) ) r_refs,
      array_distinct_sort( array_agg(CASE WHEN ref_type='Q' THEN ref_id ELSE NULL END) ) wd_ids,
-     NULL::bigint[] as member_wd_ids
+     NULL::JSONb as member_wd_ids
   FROM (
     SELECT osm_type, osm_id,
            substr(ref,1,1) as ref_type,
@@ -51,17 +51,27 @@ CREATE UNIQUE INDEX wdosm_li_index_osmtyid ON wdosm.li_raw2 (osm_type,osm_id);
 ---------------
 --- LOCAL LIB:
 
-CREATE FUNCTION wdosm.refs2wdids(  p_ids bigint[] , p_type char ) RETURNS bigint[] AS $f$
-  SELECT CASE WHEN x='{}'::bigint[] THEN NULL ELSE x END
+
+CREATE FUNCTION wdosm.refs2wdids(  p_ids bigint[] , p_type char ) RETURNS JSONb AS $f$
+  SELECT CASE WHEN j='{}'::JSONb THEN NULL ELSE j END
   FROM (
-    SELECT array_agg_mult(wd_ids) as x
-    FROM   wdosm.li_raw2
-    WHERE osm_type=$2 AND osm_id IN (select unnest($1))
+    SELECT jsonb_object_agg(xwd_id,n) as j
+    FROM (
+      SELECT unnest(wd_ids) as xwd_id, count(*) as n
+      FROM   wdosm.li_raw2
+      WHERE osm_type=$2 AND osm_id IN (select unnest($1))
+      GROUP BY 1
+    ) t2
   ) t
 $f$ language SQL IMMUTABLE;
 
 CREATE FUNCTION wdosm.wd_id_format(  p_ids bigint[] ) RETURNS text AS $f$
   SELECT 'Q'||array_to_string($1,' Q')
+$f$ language SQL IMMUTABLE;
+
+CREATE FUNCTION wdosm.wd_id_format(  p_ids JSONb ) RETURNS text AS $f$
+  SELECT array_to_string(  array_agg('Q'|| key ||':'|| value) ,  ' '  )
+  FROM jsonb_each_text($1)
 $f$ language SQL IMMUTABLE;
 
 
@@ -73,19 +83,19 @@ DELETE FROM wdosm.li_raw2 WHERE osm_type='n' AND array_length(wd_ids,1)=0; -- ne
 
 -- passo 1 - transcreve wd_ids dos nodes para as ways onde são membros
 UPDATE wdosm.li_raw2
-  SET member_wd_ids = array_distinct_sort( wdosm.refs2wdids(n_refs,'n') )
+  SET member_wd_ids = wdosm.refs2wdids(n_refs,'n')
   WHERE osm_type IN ('w','r')
 ;
 -- passo 2 - transcreve wd_ids das ways para as relations onde são membros
 UPDATE wdosm.li_raw2
-  SET member_wd_ids = array_merge_sort( member_wd_ids, wdosm.refs2wdids(w_refs,'w') )
+  SET member_wd_ids = jsonb_merge_sum( member_wd_ids, wdosm.refs2wdids(w_refs,'w') )
   -- não estamos pegando member_wd_ids das ways pois seria parentesco de segunda ordem.
   -- no futuro podemos mudar isso e fazer mais um merge.
   WHERE osm_type='r'
 ;
 -- passo 3 - transcreve wd_ids das relations-filhas para as relations onde são membros
 UPDATE wdosm.li_raw2
-  SET member_wd_ids = array_merge_sort( member_wd_ids, wdosm.refs2wdids(r_refs,'r') )
+  SET member_wd_ids = jsonb_merge_sum( member_wd_ids, wdosm.refs2wdids(r_refs,'r') )
   WHERE osm_type='r'
 ;
 
