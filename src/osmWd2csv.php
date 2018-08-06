@@ -2,7 +2,7 @@
 /**
  * OSM XML file with Wikidata tags, convert to CSV file.
  */
-print "osm_type,osm_id,info";
+print "osm_type,osm_id,otherIDs";
 $r = new XMLReader; // any fast XML Pull parser (not DOM)
 if (!$r->open("php://stdin"))
   die("\nFailed to open file\n");
