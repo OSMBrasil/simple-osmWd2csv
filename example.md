@@ -57,6 +57,28 @@ Data:
   Largest relation ID: 5418969
 ```
 
+With a bigger file, as `wikidata-germany.osm` (using in this example a  version with first timestamp 2005-07-05 and last 2018-08-03), the `-e` is time-consuming. To a fast check use default,
+```sh
+ls -lh wikidata-in-germany.osm
+#-rw-r--r-- 1 user user 1.6G Aug  4 18:18
+
+osmium fileinfo wikidata-germany.osm
+```
+```
+File:
+  Name: wikidata-germany.osm
+  Format: XML
+  Compression: none
+  Size: 1676191840
+Header:
+  Bounding boxes:
+    (5.86442,47.2654,15.0508,55.1478)
+  With history: no
+  Options:
+    generator=osmium/1.7.1
+    version=0.6
+```
+
 ### Example 2 - pre-parsing
 
 Using [LI](https://download.geofabrik.de/europe/liechtenstein.html) files.
@@ -149,4 +171,33 @@ psql -U postgres work < src/osmWd_raw-transform.sql
 
 cp /tmp/LI_wdDump.csv  data
 cp /tmp/LI_noWdId.csv  data
+```
+
+## Example 4 - analysing \_noWdId.csv
+
+After parse GE (as LI in the example 3) we get some suspect cases at  `data/GE_noWdId.csv`... The most commom quality problem is [part/whole references](https://wiki.openstreetmap.org/wiki/Talk:Relations/Relations_are_not_Categories#No_category.2Fobject_ambiguity_when_Wikidata_in_use), where there are a need for enveloping parts into a whole.
+
+Use `grep -v ":1"`  (workaround to filter lines with multiple ids) to check possible cases of "many Wikidata-IDs for same OSM feature".
+
+```
+grep -v ":1" data/GE_noWdId.csv
+
+r,27662,Q661002:2
+...
+r,74824,Q1327299:4
+r,118059,Q1327299:6 Q1674275:2
+r,122633,Q1327299:5 Q1674275:2
+r,122634,Q1327299:5 Q1674275:2
+r,139020,Q315548:33
+r,139021,Q315548:37
+r,165847,Q1674275:2
+r,190230,Q802272:46
+...
+r,365393,Q878631:22
+...
+r,1061707,Q3239584:9
+...
+r,1717086,Q896564:21
+r,1717088,Q896564:56
+...
 ```

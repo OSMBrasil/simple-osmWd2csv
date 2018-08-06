@@ -24,7 +24,7 @@ So, the following algoritms are also *reference specifications*  of these file f
 
 ## Presentation
 
-There are a lot of tools, ranging from the simplest `grep` to counting tags (see also [example]()), to complicated (but very useful) ones:
+There are a lot of tools, ranging from the simplest `grep` to counting tags (see also [example](example.md#example-0---grep)), to complicated (but very useful) ones:
 
 * Direct tools:
    * [OPL File Format](https://osmcode.org/opl-file-format) conversors;
