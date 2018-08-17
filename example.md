@@ -2,13 +2,26 @@
 
 Use case and processing exemples of the [project's tools](README.md). For data examples and samble set, see also the [`/data` folder](data).
 
+**Summary of file sizes**
+
+file name | file size | file %s | description
+----------|-----------|---------|--------
+GE.osm.pbf     | 2.8G      | 100%    |original file, [GE](http://download.geofabrik.de/europe/germany.html), compressed `.osm`
+GE.wikidata.osm.pbf | 122M  |100% (4% of original)| extracted by `osmium tags-filter`
+GE.wikidata.osm | **1.6G** = 1638M |100% | XML expanded from pbf by osmium
+**GE.wdDump.csv**       | **1.5M** | 0,0093% of osm| final format for wikidata tags
+GE.wdDump.csv.zip   | 451K = 0.44M |0,4% of osm.pbf, ~30% of csv | csv compressed
+LI.osm.pbf     | 2.2M      | 100%    |original file, [LI](http://download.geofabrik.de/europe/liechtenstein.html), compressed `.osm`
+LI.wikidata.osm.pbf | 245kb = 0,24M |100% (11% of original)| extracted by `osmium tags-filter`
+LI.wikidata.osm     | **3,3M** |100% | XML expanded from pbf by osmium
+**LI.wdDump.csv**       | **2K** = 0,002M |  0,8% of osm | final format for wikidata tags
+
 ### Example 0 - grep
 
 Looking for an **estimation of the number of Wikidata tags** in a country, by its full OSM file.
 
 1. `wget  https://download.geofabrik.de/europe/germany-latest.osm.pbf`
-2. `osmium tags-filter germany-latest.osm.pbf nwr/wikidata -o wikidata-germany-latest.osm.pbf`
-3. `osmium cat -f osm wikidata-germany-latest.osm.pbf -o wikidata-germany.osm`
+2. `osmium tags-filter germany-latest.osm.pbf nwr/wikidata -o wikidata-germany-latest.osm`
 
 ```sh
 grep wikidata wikidata-germany.osm | wc -l # = 76572
@@ -207,7 +220,7 @@ r,1717088,Q896564:56
 GE case of repeatead wd_ids in many elements.
 
 ```sql
-SELECT wd_ids[1] as wd_id, osm_type, 
+SELECT wd_ids[1] as wd_id, osm_type,
        count(*) n, max(osm_id) as osm_id_sample
 FROM wdosm.li_raw2
 GROUP BY 1,2 HAVING count(*)>10

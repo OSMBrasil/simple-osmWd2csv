@@ -10,19 +10,30 @@ The target of the "OSM Wikidata-elements CSV file" is to feed PostgreSQL (or SQL
 
 This project also define two simple data-interchange formats for tests and benchmark of OSM-Wikidata tools.
 
-**`.wdDump.csv` format**: is the best way to dump, **analyse or interchange OSM-Wikidata "bigdata"**. Is a [standard CSV](https://en.wikipedia.org/wiki/Comma-separated_values) file with columns `<osm_type,osm_id,wd_ids,wd_member_ids>`. <br/>The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), abbreviated as a letter ("n" for node, "w" for way and "r" for relation); the second its real ID, in the date of the capture; the third its Wikidata ID (a *qid* without the "Q" prefix), sometimes no ID, sometimes more tham one ID; and the fourth, `wd_member_ids`, is a set of space-separed Wikidata IDs of member-elements, that eventually can be assumed as self (parent element). The `.wdDump.csv` is the final format of the parsing process described also in this repo. <br/>Consumes **~0.01% of the XML (`.osm`) format**,  of the wikidata-filtered file, and its zipped file ~0.4% of the  `.osm.pbf` format.  In CPU time to process or analyse is also a big gain... And for data-analists is a **standard source of the truth** at any SQL tool. Examples:
+**`.wdDump.csv` format**: is the best way to dump, **analyse or interchange OSM-Wikidata "bigdata"**. Is a [standard CSV](https://en.wikipedia.org/wiki/Comma-separated_values) file with columns `<osm_type,osm_id,wd_ids,wd_member_ids>`. <br/>The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), abbreviated as a letter ("n" for node, "w" for way and "r" for relation); the second its real ID, in the date of the capture; the third its Wikidata ID (a *qid* without the "Q" prefix), sometimes no ID, sometimes more tham one ID; and the fourth, `wd_member_ids`, is a set of space-separed Wikidata IDs of member-elements, that eventually can be assumed as self (parent element). The `.wdDump.csv` is the final format of the parsing process described also in this repo. <br/>Consumes **~0.01% of the XML (`.osm`) format**,  of the wikidata-filtered file, and its zipped file ~0.4% of the  `.osm.pbf` format &mdash; see the [summary of file sizes](example.md).  In CPU time to process or analyse is also a big gain... And for data-analists is a **standard source of the truth** at any SQL tool. Example:
 
-file name | file size | file %s | description
-----------|-----------|---------|--------
-GE.osm.pbf     | 2.8G      | 100%    |original file, [GE](http://download.geofabrik.de/europe/germany.html), compressed `.osm`
-GE.wikidata.osm.pbf | 122M  |100% (4% of original)| extracted by `osmium tags-filter`
-GE.wikidata.osm | **1.6G** = 1638M |100% | XML expanded from pbf by osmium
-**GE.wdDump.csv**       | **1.5M** | 0,0093% of osm| final format for wikidata tags
-GE.wdDump.csv.zip   | 451K = 0.44M |0,4% of osm.pbf, ~30% of csv | csv compressed
-LI.osm.pbf     | 2.2M      | 100%    |original file, [LI](http://download.geofabrik.de/europe/liechtenstein.html), compressed `.osm`
-LI.wikidata.osm.pbf | 245kb = 0,24M |100% (11% of original)| extracted by `osmium tags-filter`
-LI.wikidata.osm     | **3,3M** |100% | XML expanded from pbf by osmium
-**LI.wdDump.csv**       | **2K** = 0,002M |  0,8% of osm | final format for wikidata tags
+osm_type	|osm_id	|wd_ids|wd_member_ids
+----------|-------|------|-----
+n	|32011242	|Q49660|
+w	|28712148	|Q1792561|
+w	|610491098	|Q18482699|Q18482699:2
+r	|1988261	|        | Q315548:49
+r	|51701	|  Q39	| Q11925:1 Q12746:1
+r	|3366718	|  Q386331	| Q386331:15
+
+The same table in SQL can be converted in JSON or JSONb with the following structure:
+
+```sql
+TABLE  wdOsm.raw (
+   osm_type char NOT NULL, -- reduced to n/w/r
+   osm_id bigint NOT NULL,
+   wd_ids bigint[],  -- "Q" removed
+   member_wd_ids JSONb,  -- e.g. {"315548":49}
+  -- option bigint[[key,value]] = array[array[315548,49],array[392600,2]]
+  -- and bigint2d_find(a,needle)
+   UNIQUE(osm_type,osm_id)
+);
+```
 
 **`.wdDump.raw.csv` format**: a standard CSV file with columns `<osm_type,osm_id,otherIDs>`.  <br/>Is a intermediary format, with a lot of redundant lines and IDs. Is easy to interchange or feed SQL for final parsing.<br/>The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), the second its ID, and `otherIDs` a set of space-separed IDs (node-IDs, way-IDs or Wikidata-IDs).<br/>Consumes ~10% of the XML (`.osm`) format.
 
@@ -71,7 +82,9 @@ So the last output is our XML working-file, in this case `wikidata-liechtenstein
 
 ## Use
 
-There are some examples at [example.md](example.md).
+To run samples in your database, the simplest is to `sh src/make.sh`.
+
+There are some examples at [example.md](example.md), starting with the `.osm.pbf` files.
 
 * `cat wikidata-liechtenstein.osm | php src/distincTags.php` is a fact-check for `osmium fileinfo -e`  and to confirm the [DTD](https://en.wikipedia.org/wiki/Document_type_definition) of the OSM file, as well its IDs.
 
