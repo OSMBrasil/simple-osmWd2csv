@@ -2,6 +2,17 @@
  * PUBLIC LIB (COMMOM UTILITIES)
  */
 
+CREATE or replace FUNCTION array_subtract(
+  p_a anyarray, p_b anyarray
+  ,p_empty_to_null boolean default true
+) RETURNS anyarray AS $f$
+  SELECT CASE WHEN p_empty_to_null AND x='{}' THEN NULL ELSE x END
+  FROM (
+    SELECT array(  SELECT unnest(p_a) EXCEPT SELECT unnest(p_b)  )
+  ) t(x)
+$f$ language SQL IMMUTABLE;
+
+
 CREATE or replace FUNCTION array_fillto(
   -- see https://stackoverflow.com/a/10518236/287948
   anyarray,integer,anyelement DEFAULT NULL
@@ -35,6 +46,7 @@ $f$ language SQL IMMUTABLE;
 
 
 CREATE or replace FUNCTION unnest_2d_1d(
+  -- same as array_reduce_dim()
   ANYARRAY, OUT a ANYARRAY
 ) RETURNS SETOF ANYARRAY AS $func$
  BEGIN
@@ -45,6 +57,19 @@ CREATE or replace FUNCTION unnest_2d_1d(
     END LOOP;
  END
 $func$ LANGUAGE plpgsql IMMUTABLE STRICT;
+
+CREATE or replace FUNCTION public.array_reduce_dim(anyarray)
+RETURNS SETOF anyarray AS $f$ -- see https://wiki.postgresql.org/wiki/Unnest_multidimensional_array
+DECLARE
+    s $1%TYPE;
+BEGIN
+    FOREACH s SLICE 1  IN ARRAY $1 LOOP
+        RETURN NEXT s;
+    END LOOP;
+    RETURN;
+END;
+$f$ LANGUAGE plpgsql IMMUTABLE;
+
 
 CREATE or replace FUNCTION array_sample(
   p_items ANYARRAY,     -- the array to be random-sampled
@@ -109,8 +134,8 @@ CREATE or replace FUNCTION array_merge_sort(
   SELECT array_distinct_sort(array_cat($1,$2),$3)
 $wrap$ language SQL IMMUTABLE;
 
-DROP AGGREGATE IF EXISTS array_agg_mult(anyarray);
-CREATE AGGREGATE array_agg_mult(anyarray) (
+DROP AGGREGATE IF EXISTS array_agg_cat(anyarray) CASCADE;
+CREATE AGGREGATE array_agg_cat(anyarray) (
   SFUNC=array_cat,
   STYPE=anyarray,
   INITCOND='{}'
@@ -127,37 +152,46 @@ $f$ language SQL IMMUTABLE;
 ---
 
 /**
- * "Merge sum" functions are for JSONb key-intValue objects (ki objects).
- * They are "key counters", so, to merge two keys, the intValues must be added.
- * Change the core of jsonb_merge_sum(jsonb,jsonb) to the correct datatype.
- * The JSON "number" is equivalent to the SQL's ::numeric.
+ * JSON-summable or "merge sum" functions are for JSONb key-numericValue objects (ki objects).
+ * They are "key counters", so, to merge two keys, the numericValues must be added.
+ * Change the core of jsonb_summable_merge(jsonb,jsonb) to the correct datatype.
+ * The JSON "number" is equivalent to the SQL's ::numeric, but can be ::int, ::float or ::bigint.
  * Any invalid or empty JSONb object will be represented as SQL NULL.
  * See https://gist.github.com/ppKrauss/679cea825002076c8697e734763076b9
  */
 
-CREATE or replace FUNCTION jsonb_is_summable(jsonb) RETURNS boolean AS $f$
+CREATE or replace FUNCTION jsonb_summable_check(jsonb, text DEFAULT 'numeric') RETURNS boolean AS $f$
+  -- CORE function of jsonb_summable_*().
   SELECT not($1 IS NULL OR jsonb_typeof($1)!='object' OR $1='{}'::jsonb)
-        AND (SELECT bool_and(jsonb_typeof(value)='number') FROM jsonb_each($1))
-        -- for bigint use jsonb_each_text() with regex, value ~ '^\d+$'.
+        AND CASE
+          WHEN $2='numeric' OR $2='float' THEN (SELECT bool_and(jsonb_typeof(value)='number') FROM jsonb_each($1))
+          ELSE (SELECT bool_and(value ~ '^\d+$') FROM jsonb_each_text($1))
+          END
 $f$ language SQL IMMUTABLE;
 
-CREATE or replace FUNCTION jsonb_int_values( jsonb ) RETURNS int[] AS $f$
+CREATE or replace FUNCTION jsonb_summable_values( jsonb ) RETURNS int[] AS $f$
+  -- CORE function of jsonb_summable_*().
+  -- CHANGE replacing ::int by your choice of type in the jsonb_summable_check(x,choice)
   SELECT array_agg(value::int) from jsonb_each_text($1)
 $f$ language SQL IMMUTABLE;
 
-CREATE or replace FUNCTION jsonb_int_maxval( jsonb ) RETURNS int AS $f$
-  SELECT max(value::int) from jsonb_each_text($1) -- faster tham ::text::int jsonb_each()
+CREATE or replace FUNCTION jsonb_summable_maxval( jsonb ) RETURNS bigint AS $f$
+  -- CORE function of jsonb_summable_*(), change also the "returns" to bigint or float.
+  SELECT max(value::bigint) from jsonb_each_text($1)
 $f$ language SQL IMMUTABLE;
 
-
-CREATE or replace FUNCTION jsonb_merge_sum(  jsonb, jsonb ) RETURNS jsonb AS $f$
+CREATE or replace FUNCTION jsonb_summable_merge(  jsonb, jsonb ) RETURNS jsonb AS $f$
+  -- CORE function of jsonb_summable_*().
   SELECT CASE
     WHEN emp1 AND emp2 THEN NULL
     WHEN emp2 THEN $1
     WHEN emp1 THEN $2
     ELSE $1 || (
-      -- CHANGE this core operation to enforce ::number or ::float or ::bigint
-      SELECT jsonb_object_agg(  key,  value::int + COALESCE(($1->>key)::int,0)   )
+      -- CHANGE replacing ::int by your choice of type in the jsonb_summable_check(x,choice)
+      SELECT jsonb_object_agg(
+          COALESCE(key,'')
+          , value::int + COALESCE(($1->>key)::int,0)
+        )
       FROM jsonb_each_text($2)
     ) END
   FROM (
@@ -166,7 +200,19 @@ CREATE or replace FUNCTION jsonb_merge_sum(  jsonb, jsonb ) RETURNS jsonb AS $f$
   ) t
 $f$ language SQL IMMUTABLE;
 
-CREATE or replace FUNCTION jsonb_merge_sum(  jsonb[] ) RETURNS jsonb AS $f$
+CREATE or replace FUNCTION jsonb_summable_output(
+   p_j jsonb
+  ,p_sep text DEFAULT ', '
+  ,p_prefix text DEFAULT ''
+) RETURNS text AS $f$
+  SELECT array_to_string(
+    array_agg(concat(p_prefix,key,':',value)) FILTER (WHERE key is not null)
+    ,p_sep
+  )
+  FROM jsonb_each_text(p_j)
+$f$ language SQL IMMUTABLE;
+
+CREATE or replace FUNCTION jsonb_summable_merge(  jsonb[] ) RETURNS jsonb AS $f$
  DECLARE
   x JSONb;
   j JSONb;
@@ -178,18 +224,18 @@ CREATE or replace FUNCTION jsonb_merge_sum(  jsonb[] ) RETURNS jsonb AS $f$
     END IF;
     x := $1[1];
     FOREACH j IN ARRAY $1[2:] LOOP
-      x:= jsonb_merge_sum(x,j);
+      x:= jsonb_summable_merge(x,j);
     END LOOP;
     RETURN x;
  END
 $f$ LANGUAGE plpgsql IMMUTABLE;
 
-CREATE or replace FUNCTION jsonb_merge_sum(  jsonb[], jsonb[] ) RETURNS jsonb[] AS $f$
+CREATE or replace FUNCTION jsonb_summable_merge(  jsonb[], jsonb[] ) RETURNS jsonb[] AS $f$
  SELECT CASE
    WHEN $2 IS NULL THEN $1
    WHEN $1 IS NULL THEN $2
    ELSE (
-     SELECT array_agg( jsonb_merge_sum(j1,j2) )
+     SELECT array_agg( jsonb_summable_merge(j1,j2) )
      FROM (
        SELECT unnest(a) j1, unnest(b) j2
        FROM array_fillto_duo($1,$2) t(a,b)
@@ -197,16 +243,16 @@ CREATE or replace FUNCTION jsonb_merge_sum(  jsonb[], jsonb[] ) RETURNS jsonb[] 
    ) END
 $f$ language SQL IMMUTABLE;
 
-DROP AGGREGATE IF EXISTS jsonb_agg_mergesum(jsonb) CASCADE;
-CREATE AGGREGATE jsonb_agg_mergesum(jsonb) ( -- important!
-  SFUNC=jsonb_merge_sum,
+DROP AGGREGATE IF EXISTS jsonb_summable_aggmerge(jsonb) CASCADE;
+CREATE AGGREGATE jsonb_summable_aggmerge(jsonb) ( -- important!
+  SFUNC=jsonb_summable_merge,
   STYPE=jsonb,
   INITCOND=NULL
 );
 
-/* DROP AGGREGATE IF EXISTS jsonb_agg_mergesum(jsonb[]) CASCADE;
-CREATE AGGREGATE jsonb_agg_mergesum(jsonb[]) ( -- low use
-  SFUNC=jsonb_merge_sum,
+/* DROP AGGREGATE IF EXISTS jsonb_summable_aggmerge(jsonb[]) CASCADE;
+CREATE AGGREGATE jsonb_summable_aggmerge(jsonb[]) ( -- low use
+  SFUNC=jsonb_summable_merge,
   STYPE=jsonb[],
   INITCOND='{}' -- test with null
 );

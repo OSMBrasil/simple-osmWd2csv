@@ -4,7 +4,8 @@
  * The pre-parse pass only node/way/relation with optional wikidata and id-refs as content.
  * @depends osmWd2csv_pre.sh
  */
-print "osm_type,osm_id,otherIDs";
+include 'GeoHash.php';
+print "osm_type,osm_id,other_ids";
 define("ND",'n'); // 'node' or 'n'
 
 $r = new XMLReader; // any fast XML-Pull or SAX parser (not DOM!)
@@ -12,35 +13,36 @@ if (!$r->open("php://stdin"))  die("\nFailed to open file\n");
 $r->read();
 if ($r->name!='osm')  die("\n XML is not OSM\n");
 
-for( $lastLine=$tx='',$nm=ND;  $r->read();  )
+for( $lastLine=$tx=$lastCentroid='',$nm=ND;  $r->read();  )
   if ($r->nodeType == XMLReader::ELEMENT) {
-    printLine($lastLine,$tx,$nm);
-    $tx = '';
+    printLine($lastLine.$lastCentroid, $tx, $nm);
+    $tx='';
     $nm = substr($r->localName,0,1); // results in n=node, w=way, r=relation
+    $lat = $r->getAttribute('lat');  // on node element, coordinates as centroid
+    $lastCentroid = $lat? ('c'.GeoHash::encode($r->getAttribute('lon'),$lat).' '): '';
+    // convert to 64 bits later in the database, and truncate according map_feature type.
+    //OLD numMix( numPad() , numPad($r->getAttribute('lon'),3) ).' '): '';
     $lastLine = "$nm,". $r->getAttribute('id') .',';
   } elseif ($r->nodeType == XMLReader::TEXT) {
-    $tx = trim( preg_replace('/\s+/s',' ',$r->value) );
+    $tx .= trim( preg_replace('/\s+/s',' ',$r->value) );
     if (strpos($tx,' ')===false && substr($tx,0,1)=='l') $tx=''; // is empty node.
-    else $tx = preg_replace_callback(
-      '/l\-?(\d+\.\d+)~\-?(\d+\.\d+)/'   // lat~long coordinates
-      ,function ($m) { return 'l'.numMix( numPad($m[1]) , numPad($m[2],3) ); }
-      ,$tx
-    );
   }
 printLine($lastLine,$tx,$nm);
 $r->close();
-
 
 // // // LIB
 
 function printLine($line,$tx,$nm) {
   if ($nm!=ND || $tx) // exclude empty nodes
-    print "\n$line$tx";
+    print "\n".trim("$line$tx");
 }
 
+/* optional didactic interlace:
 function numPad($x,$a_len=2) {
-  list($a,$b)=explode('.',$x);
-  return str_pad($a,$a_len,'0',STR_PAD_LEFT) . str_pad($b,4,'0');
+  if (preg_match('/^-?(\d+)(?:\.(\d{1,4})\d*)?$/',$x,$m))
+    return str_pad( $m[1], $a_len, '0', STR_PAD_LEFT)
+           .str_pad( isset($m[2])?$m[2]:'0' , 4, '0');
+  else return '';
 }
 
 function numMix($x,$y) {
@@ -53,3 +55,4 @@ function numMix($x,$y) {
     if ($y_len>$x_len) $s.='0'.$y[$y_len-1];
     return $s;
 }
+*/

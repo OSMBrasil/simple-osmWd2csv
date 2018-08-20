@@ -1,27 +1,7 @@
 
+-- TRASH
 
-
-CREATE FUNCTION wdosm.check_same_wdid_refcenter(
-  p_cut integer DEFAULT 6,
-  p_type char DEFAULT 'n'
-) RETURNS TABLE (commom_wd_id bigint, refcenter text, osm_ids bigint[]) AS $f$
-  SELECT wds[1] commom_wd_id, refcenter, osm_ids
-  FROM (
-   SELECT array_agg(osm_id) osm_ids,
-    array_agg(wd_id) wds,
-    substr(base36_encode(centroid),1,p_cut) refcenter,
-    count(*) n
-   FROM wdosm.tmp_raw_filtered
-   WHERE centroid is not null AND osm_type=p_type
-   GROUP BY 3
-   HAVING count(*)>1
-  ) t
-  WHERE array_is_allsame(wds)
-  ORDER BY 1
-$f$ language SQL IMMUTABLE;
-
--- XHTML formaters:
-
+/*
 CREATE or replace FUNCTION xhtml_ahref(p_a text, p_url text) RETURNS xml AS $f$
   SELECT xmlelement(
           name a,
@@ -80,6 +60,9 @@ CREATE or replace FUNCTION wdosm.check_same_wdid_refcenter_xml(
   FROM wdosm.check_same_wdid_refcenter($1,$2)
 $f$ language SQL IMMUTABLE;
 
+
+*/
+
 ------- THE REPORTS -----------
 
-SELECT wdosm.check_same_wdid_refcenter_xml();
+-- copy into a file! SELECT wdosm.check_same_wdid_refcenter_xml();

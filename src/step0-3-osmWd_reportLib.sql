@@ -4,16 +4,16 @@
  */
 
 CREATE FUNCTION wdosm.check_same_wdid_refcenter(
-  p_cut integer DEFAULT 6,
+  p_cut integer DEFAULT 5,
   p_type char DEFAULT 'n'
 ) RETURNS TABLE (commom_wd_id bigint, refcenter text, osm_ids bigint[]) AS $f$
   SELECT wds[1] commom_wd_id, refcenter, osm_ids
   FROM (
    SELECT array_agg(osm_id) osm_ids,
     array_agg(wd_id) wds,
-    substr(base36_encode(centroid),1,p_cut) refcenter,
+    substr(centroid,1,p_cut) refcenter, -- old base36_encode(centroid) .. will base32
     count(*) n
-   FROM wdosm.tmp_raw_filtered
+   FROM wdosm.main
    WHERE centroid is not null AND osm_type=p_type
    GROUP BY 3
    HAVING count(*)>1
@@ -21,6 +21,7 @@ CREATE FUNCTION wdosm.check_same_wdid_refcenter(
   WHERE array_is_allsame(wds)
   ORDER BY 1
 $f$ language SQL IMMUTABLE;
+
 
 -- XHTML formaters:
 
@@ -98,8 +99,7 @@ CREATE FUNCTION wdosm.wd_id_format(  p_ids bigint[] ) RETURNS text AS $f$
 $f$ language SQL IMMUTABLE;
 
 CREATE FUNCTION wdosm.wd_id_format(  p_ids JSONb ) RETURNS text AS $f$
-  SELECT array_to_string(  array_agg('Q'|| key ||':'|| value) ,  ' '  )
-  FROM jsonb_each_text($1)
+  SELECT jsonb_summable_output(p_ids,' ', 'Q')
 $f$ language SQL IMMUTABLE;
 
 CREATE FUNCTION wdosm.wd_id_unformat( p_list text ) RETURNS JSONb AS $f$
