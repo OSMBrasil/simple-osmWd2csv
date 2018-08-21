@@ -41,7 +41,7 @@ CREATE TABLE wdosm.main (
   sid int NOT NULL REFERENCES wdosm.source(id) DEFAULT 1,
   wd_id bigint,
   feature_type text,
-  centroid text CHECK ( char_length(centroid)<10 ),-- old bigint, now direct GeoHash. Eg. 'u0qgbz9dns1'
+  centroid text CHECK ( char_length(centroid)<20 ),-- old bigint, now direct GeoHash. Eg. 'u0qgbz9dns1'
   wd_member_ids JSONb,
   used_ref_ids bigint[], -- a list of valid osm_id's that generated the wd_members.
   count_origref_ids  int,  -- the total number of refs in the original member-set
@@ -138,6 +138,37 @@ CREATE VIEW wdosm.vw_tmp_output AS
 
 -- FUNCtIONS
 
+
+CREATE FUNCTION wdosm.output_to_csv (
+  p_source_id int,
+  p_name text DEFAULT 'TMP',
+  p_expcsv boolean DEFAULT true,
+  p_path text DEFAULT '/tmp'
+) RETURNS text AS $f$
+  DECLARE
+    sql text := $$
+    COPY ( -- main dump
+      SELECT osm_type, osm_id, wd_id, centroid
+      FROM wdosm.vw_tmp_output
+      WHERE sid=%s AND wd_id is NOT null
+    ) TO %L CSV HEADER;
+    COPY ( -- list suspects
+    SELECT osm_type, osm_id, wd_member_ids
+    FROM wdosm.vw_tmp_output
+    WHERE sid=%s AND wd_id is null AND has_wdmembs -- future wd_memb_max>1
+  ) TO %L  CSV HEADER;
+  $$;
+  fname_pre text := '%s/%s';
+  BEGIN
+    p_name = upper(trim(p_name));
+    fname_pre := format(fname_pre,p_path,p_name);
+    sql := format(sql, $1, fname_pre||'.wdDump.csv', $1, fname_pre||'.noWdId.csv');
+    EXECUTE sql;
+    RETURN format('-- files CSVs saved, see ls %s*',fname_pre);
+  END
+$f$ LANGUAGE plpgsql;
+
+
 CREATE or replace FUNCTION wdosm.alter_tmp_raw_csv (
   p_name text DEFAULT 'TMP', -- eg. 'LI', the ISO-two-letter code Liechtenstein
   p_run_insert boolean DEFAULT true,
@@ -183,7 +214,7 @@ CREATE FUNCTION wdosm.wd_id_group(  bigint[] ) RETURNS JSONB AS $f$
   FROM (
     SELECT x[1] as x, count(*) as n  --, array_agg(x[2])
     FROM unnest_2d_1d($1) t(x)
-    WHERE x[1]>1  -- so, and not null
+    WHERE x is not null AND x[1]>0  -- so, and not null
     GROUP BY 1
     -- ORDER BY 1  jsonb not presrve.
   ) t2
@@ -206,23 +237,24 @@ CREATE FUNCTION wdosm.get_source_abbrev( int ) RETURNS text AS $f$
 $f$ language SQL strict IMMUTABLE;
 
 
-CREATE TABLE wdosm.tmp_expand_step1( -- for wdosm.parse_insert
+CREATE TABLE wdosm.kx_step1( -- for wdosm.parse_insert
     osm_type char(1), osm_id bigint, is_int boolean,
     ref_type char(1), ref text, is_ref boolean, ref2 bigint
 );
-CREATE INDEX expand_step1_idx1 ON wdosm.tmp_expand_step1 (osm_type, osm_id, ref_type, ref);
-CREATE INDEX expand_step1_idx2 ON wdosm.tmp_expand_step1 (ref2);
+CREATE INDEX expand_step1_idx1 ON wdosm.kx_step1 (osm_type, osm_id, ref_type, ref);
+CREATE INDEX expand_step1_idx2 ON wdosm.kx_step1 (ref2);
 
 /**
  * MAIN parse process.
  */
 CREATE or replace FUNCTION wdosm.parse_insert(
   p_source_id int,  -- must greater than 0
-  p_expcsv boolean DEFAULT true -- to export CSV files
-) RETURNS void AS $f$
+  p_expcsv boolean DEFAULT true, -- to export CSV files
+  p_delkxs boolean DEFAULT true -- to delete caches
+) RETURNS text AS $f$
 
-  DELETE FROM wdosm.tmp_expand_step1;
-  INSERT INTO wdosm.tmp_expand_step1 (osm_type,osm_id,ref_type,ref,is_int,is_ref,ref2)
+  DELETE FROM wdosm.kx_step1;
+  INSERT INTO wdosm.kx_step1 (osm_type,osm_id,ref_type,ref,is_int,is_ref,ref2)
     SELECT DISTINCT osm_type,osm_id,ref_type,ref,is_int
            ,is_int AND ref_type NOT IN ('Q','c') is_ref
            ,CASE WHEN is_int THEN ref::bigint ELSE NULL END ref2
@@ -239,13 +271,13 @@ CREATE or replace FUNCTION wdosm.parse_insert(
     ) t2
   ;
   DELETE FROM wdosm.main WHERE sid=p_source_id;  -- caution!!
-  INSERT INTO wdosm.main
+  INSERT INTO wdosm.main (osm_type,osm_id,sid,wd_id,feature_type,centroid,count_origref_ids,count_parseref_ids)
     SELECT osm_type, osm_id, p_source_id
-      ,MAX(wd_id) wd_id  -- ? need FILTER(WHERE ref_type='Q')
+      ,MAX(wd_id)  FILTER(WHERE ref_type='Q') wd_id -- (redundance: remove filter)
       ,array_to_string(array_agg(other) FILTER(WHERE ref_type='t' OR ref_type='h'),'-') feature_type
-      ,MAX(centroid) centroid  -- ? need FILTER(WHERE ref_type='c')
-      ,NULL::jsonb wd_member_ids -- for a second-step
-      ,NULL::bigint[] used_osm_members -- for a second-step
+      ,MAX(centroid)  centroid
+      --,NULL::jsonb wd_member_ids -- for a second-step
+      --,NULL::bigint[] used_osm_members -- for a second-step
       ,SUM(count_ref_ids) count_origref_ids -- original from file.OSM or pre-parser
       ,SUM(array_length(ref_ids,1)) count_parseref_ids -- as useful ref_ids
     FROM (
@@ -265,10 +297,10 @@ CREATE or replace FUNCTION wdosm.parse_insert(
           WHERE is_ref AND ref2 IN (SELECT osm_id FROM wdosm.tmp_raw_dist_ids)
         )) ref_ids -- array_length(ref_ids,1) =< count_ref_ids
         ,MAX(ref)  FILTER( WHERE not(is_ref) AND ref_type NOT IN ('Q','c') ) other
-        ,MAX(ref2) FILTER( WHERE ref_type='c' AND is_int ) centroid
+        ,MAX(ref) FILTER( WHERE ref_type='c' ) centroid
         ,MAX(ref2) FILTER( WHERE ref_type='Q' AND is_int ) wd_id
         ,COUNT(*)::int as n -- for quality-control only; n=count_ref_ids always excet nodes (count_ref_ids=0 and n=1)
-      FROM wdosm.tmp_expand_step1
+      FROM wdosm.kx_step1
       GROUP BY 1,2,3
       ORDER BY 1,2,3
     ) t0
@@ -278,7 +310,7 @@ CREATE or replace FUNCTION wdosm.parse_insert(
   DELETE FROM wdosm.tmp_expanded;
   INSERT INTO wdosm.tmp_expanded (osm_type, osm_id, wd_id, ref_type, ref_id)
       SELECT DISTINCT m.osm_type, m.osm_id, m.wd_id, s.ref_type, s.ref2
-      FROM wdosm.tmp_expand_step1 s INNER JOIN wdosm.main m
+      FROM wdosm.kx_step1 s INNER JOIN wdosm.main m
         ON m.sid=p_source_id AND m.osm_type=s.osm_type AND m.osm_id=s.osm_id
         -- AND ref_type IN ('n','w','r')
       WHERE s.is_ref AND s.ref2 IN (SELECT osm_id FROM wdosm.tmp_raw_dist_ids)
@@ -296,9 +328,9 @@ CREATE or replace FUNCTION wdosm.parse_insert(
       FROM wdosm.tmp_expanded
       UNION ALL
       SELECT c.osm_type, c.osm_id, c.wd_id, c.ref_type, c.ref_id
-             ,p.all_refs || array[c.wd_id,c.osm_id]
+             ,p.all_refs || array[CASE WHEN c.wd_id IS NULL THEN 1 ELSE c.wd_id END,c.osm_id] -- CASE for debug nuls
       FROM wdosm.tmp_expanded c JOIN tree p
-        ON c.ref_type=p.osm_type AND c.ref_id = p.osm_id AND p.osm_id!=c.osm_id
+        ON  c.ref_id = p.osm_id AND c.osm_id!=p.osm_id  -- c.ref_type=p.osm_type AND
            AND array_length(p.all_refs,1)<100 -- to exclude the endless loops
     ) --end with
     SELECT osm_type, osm_id, array_agg_cat(all_refs) as pairs
@@ -316,29 +348,18 @@ CREATE or replace FUNCTION wdosm.parse_insert(
   UPDATE wdosm.main SET wd_member_ids=NULL WHERE jsonb_typeof(wd_member_ids)='null';
   UPDATE wdosm.main SET used_ref_ids=NULL  WHERE used_ref_ids='{}'::bigint[];
 
-  DELETE FROM wdosm.tmp_expand_step1;
-  DELETE FROM wdosm.tmp_expanded;
+  DELETE FROM wdosm.kx_step1 WHERE p_delkxs;
+  DELETE FROM wdosm.tmp_expanded WHERE p_delkxs;
 
-  WITH t AS (select true as do where p_expcsv)
-  --  select abbrev from wdosm.source where p_expcsv AND id=p_source_id
-  -- to  future customize the TO option
-  COPY ( -- main dump!
-    SELECT osm_type, osm_id, wd_id, centroid
-    FROM wdosm.vw_tmp_output
-    WHERE sid=p_source_id AND wd_id is NOT null
-  ) TO '/tmp/TMP.wdDump.csv' CSV HEADER
-  ,COPY ( -- list suspects
-    SELECT osm_type, osm_id, wd_member_ids
-    FROM wdosm.vw_tmp_output
-    WHERE sid=p_source_id AND wd_id is null AND has_wdmembs -- future wd_memb_max>1
-  ) TO '/tmp/TMP.noWdId.csv' CSV HEADER
-  ;
+  SELECT wdosm.output_to_csv(p_source_id,'TMP'); -- WHERE p_expcsv;  -- retorno da funcao
 
 $f$ LANGUAGE SQL;
 
 ---- --- ---
 
-SELECT wdosm.alter_tmp_raw_csv('LI',false); -- LI is a sample, step3 will use correct.
+SELECT wdosm.alter_tmp_raw_csv('LI',false) AS fake_load_trash;
+-- LI is a sample, step3 will use correct.
+
 
 /* OLD
 CREATE or replace FUNCTION wdosm.get_member_wds(
