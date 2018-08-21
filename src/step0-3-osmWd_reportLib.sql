@@ -16,7 +16,7 @@ CREATE FUNCTION wdosm.check_same_wdid_refcenter(
     count(*) n
    FROM wdosm.main
    WHERE centroid is not null AND osm_type=p_type
-         AND CASE p_sid=0 THEN true ELSE p_sid=sid END
+         AND CASE WHEN p_sid=0 THEN true ELSE p_sid=sid END
    GROUP BY 3
    HAVING count(*)>1
   ) t
@@ -63,6 +63,7 @@ $f$ language SQL IMMUTABLE;
 
 
 CREATE or replace FUNCTION wdosm.check_same_wdid_refcenter_xml(
+  p_sid int DEFAULT 0,
   p_cut integer DEFAULT 6,
   p_type char DEFAULT 'n'
 ) RETURNS xml AS $f$
@@ -85,7 +86,7 @@ CREATE or replace FUNCTION wdosm.check_same_wdid_refcenter_xml(
       ) -- tr
     ) -- agg(tr)
   ) --  table
-  FROM wdosm.check_same_wdid_refcenter($1,$2)
+  FROM wdosm.check_same_wdid_refcenter($1,$2,$3)
 $f$ language SQL IMMUTABLE;
 
 -- --
