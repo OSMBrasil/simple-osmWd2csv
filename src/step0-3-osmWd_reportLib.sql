@@ -4,6 +4,7 @@
  */
 
 CREATE FUNCTION wdosm.check_same_wdid_refcenter(
+  p_sid int DEFAULT 0,
   p_cut integer DEFAULT 5,
   p_type char DEFAULT 'n'
 ) RETURNS TABLE (commom_wd_id bigint, refcenter text, osm_ids bigint[]) AS $f$
@@ -15,6 +16,7 @@ CREATE FUNCTION wdosm.check_same_wdid_refcenter(
     count(*) n
    FROM wdosm.main
    WHERE centroid is not null AND osm_type=p_type
+         AND CASE p_sid=0 THEN true ELSE p_sid=sid END
    GROUP BY 3
    HAVING count(*)>1
   ) t
