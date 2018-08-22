@@ -1,8 +1,12 @@
 # simple-osmWd2csv
 
-Simplest and stupid algoritm to convert big big OSM files into **simple CSV file for [Wikidata-tag](https://wiki.openstreetmap.org/wiki/Key:wikidata) analysis**.
+[Simplest and stupid algoritm (v0.0.2)](https://github.com/OSMBrasil/simple-osmWd2csv/tree/v0.0.2) and some evolution to convert big OSM files into **simple CSV file for [Wikidata-tag](https://wiki.openstreetmap.org/wiki/Key:wikidata) analysis**.
 
-This project is suitable for *OSM beginners*, for Unix *agile* pipeline lovers... And for those who do not trust anyone: to *fact checking*.
+This project have two distinct parts:
+
+1. **XML parser**: converts a big [OSM XML file](https://wiki.openstreetmap.org/wiki/OSM_XML) into a lean tabular format, the intermediary CSV "raw" format. There are other tolls (eg. OPL), this one is suitable for *OSM beginners*, for Unix *agile* pipeline lovers... And for those who do not trust anyone: to *fact checking*.<br/> The pipeline of [`step1-osmWd2csv_pre.sh`](src/step1-osmWd2csv_pre.sh) and [`step2-osmWd2csv.php`](src/step2-osmWd2csv.php).
+
+2. **Final parser and SQL database**. It is not so simple, have some mix of libraries and medium-complexity SQL processing. Produce all final products, including the exportation to the proposed data interchange format, `.wdDump.csv`.
 
 The target of the "OSM Wikidata-elements CSV file" is to feed PostgreSQL (or SQLite) with complete and reliable data. See eg. [Semantic-bridge OSM-Wikidata](https://github.com/OSMBrasil/semantic-bridge) project.
 
@@ -10,16 +14,18 @@ The target of the "OSM Wikidata-elements CSV file" is to feed PostgreSQL (or SQL
 
 This project also define two simple data-interchange formats for tests and benchmark of OSM-Wikidata tools.
 
-**`.wdDump.csv` format**: is the best way to dump, **analyse or interchange OSM-Wikidata "bigdata"**. Is a [standard CSV](https://en.wikipedia.org/wiki/Comma-separated_values) file with columns `<osm_type,osm_id,wd_ids,wd_member_ids>`. <br/>The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), abbreviated as a letter ("n" for node, "w" for way and "r" for relation); the second its real ID, in the date of the capture; the third its Wikidata ID (a *qid* without the "Q" prefix), sometimes no ID, sometimes more tham one ID; and the fourth, `wd_member_ids`, is a set of space-separed Wikidata IDs of member-elements, that eventually can be assumed as self (parent element). The `.wdDump.csv` is the final format of the parsing process described also in this repo. <br/>Consumes **~0.01% of the XML (`.osm`) format**,  of the wikidata-filtered file, and its zipped file ~0.4% of the  `.osm.pbf` format &mdash; see the [summary of file sizes](example.md).  In CPU time to process or analyse is also a big gain... And for data-analists is a **standard source of the truth** at any SQL tool. Example:
+**`.wdDump.csv` format**: is the best way to dump, **analyse or interchange OSM-Wikidata "bigdata"**. Is a [standard CSV](https://en.wikipedia.org/wiki/Comma-separated_values) file with columns <br/> &nbsp;&nbsp; `<osm_type,osm_id,wd_ids,wd_member_ids>`.
 
-osm_type	|osm_id	|wd_ids|wd_member_ids
-----------|-------|------|-----
-n	|32011242	|Q49660|
-w	|28712148	|Q1792561|
-w	|610491098	|Q18482699|Q18482699:2
-r	|1988261	|        | Q315548:49
-r	|51701	|  Q39	| Q11925:1 Q12746:1
-r	|3366718	|  Q386331	| Q386331:15
+The first field, `osm_type`, is the  [OSM element type](https://wiki.openstreetmap.org/wiki/Elements), abbreviated as a letter ("n" for node, "w" for way and "r" for relation); the second its real ID, in the date of the capture; the third its Wikidata ID (a *qid* without the "Q" prefix), sometimes no ID, sometimes more tham one ID; and the fourth, `wd_member_ids`, is a set of space-separed Wikidata IDs of member-elements, that eventually can be assumed as self (parent element). The `.wdDump.csv` is the final format of the parsing process described also in this repo. <br/>Consumes **~0.01% of the XML (`.osm`) format**,  of the wikidata-filtered file, and its zipped file ~0.4% of the  `.osm.pbf` format &mdash; see the [summary of file sizes](example.md).  In CPU time to process or analyse is also a big gain... And for data-analists is a **standard source of the truth** at any SQL tool. Example:
+
+osm_type	|osm_id	|wd_id|geohash|wd_member_ids
+----------|-------|------|-----|-------
+n	|[32011242](https://www.openstreetmap.org/node/32011242)	|[Q49660](http://wikidata.org/entity/Q49660)| [`u0qu3jyt`](http://geohash.org/u0qu3jyt) |
+w	|[28712148](https://www.openstreetmap.org/way/28712148)	|[Q1792561](http://wikidata.org/entity/Q1792561)| [`u0qu0tmz`](http://geohash.org/u0qu0tmz)|
+w	|[610491098](https://www.openstreetmap.org/way/610491098)	|[Q18482699](http://wikidata.org/entity/Q18482699)|[`6vjwdr`](http://geohash.org/6vjwdr) | [Q18482699](http://wikidata.org/entity/Q18482699):2
+r	|[1988261](https://www.openstreetmap.org/relation/1988261)	|        |[`u1j1`](http://geohash.org/u1j1) |[Q315548](http://wikidata.org/entity/Q315548):49
+r	|[51701](https://www.openstreetmap.org/relation/51701)	|  Q39	|[`u0m`](http://geohash.org/u0m) |Q11925:1 Q12746:1
+r	|[3366718](https://www.openstreetmap.org/relation/3366718)	|  Q386331	|[`6ur`](http://geohash.org/6ur)| Q386331:15
 
 The same table in SQL can be converted in JSON or JSONb with the following structure:
 
@@ -27,7 +33,8 @@ The same table in SQL can be converted in JSON or JSONb with the following struc
 TABLE  wdOsm.raw (
    osm_type char NOT NULL, -- reduced to n/w/r
    osm_id bigint NOT NULL,
-   wd_ids bigint[],  -- "Q" removed
+   wd_id bigint,  -- "Q" removed
+   geohash bigint, -- must convert to base32
    member_wd_ids JSONb,  -- e.g. {"315548":49}
   -- option bigint[[key,value]] = array[array[315548,49],array[392600,2]]
   -- and bigint2d_find(a,needle)

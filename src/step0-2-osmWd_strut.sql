@@ -48,10 +48,6 @@ CREATE TABLE wdosm.main (
   count_parseref_ids  int,  -- the total number of refs in the parsed member-set
   UNIQUE(sid,osm_type,osm_id)
 );
-CREATE UNIQUE INDEX wdosm_exp1_index ON wdosm.main (osm_type,osm_id);
--- now any other can run by DELETE / INSERT instead TO CREATE.
--- so , run wdosm.alter_tmp_raw_csv('YOURS',true)
-
 
 COMMENT ON TABLE wdosm.main IS $$Main table for Wikidata-tag OSM database dump.
 The uniqueness if osm_id is complemented by osm_type and, as each country can repeat borders, sid.
