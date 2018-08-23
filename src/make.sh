@@ -5,9 +5,18 @@ printf "\n------------------\n"
 
 cp samples/LI*.* /tmp   # only to mount
 
-read -p " Database complete string? (ENTER for default 'postgres/localhost/work') " OSM_DATABASE
+WAIT="..wait.." #"..wait.." #please copy/paste and do yourself
+OSM_DATABASE2="postgres://postgres:postgres@localhost:5432/work"
+OSM_DATABASE=$OSM_DATABASE2
+
+read -p " (ENTER for '$OSM_DATABASE') Database full connection-string? " OSM_DATABASE
 if [ "$OSM_DATABASE" = "" ]; then
-  OSM_DATABASE="postgres://postgres:postgres@localhost:5432/work"
+  OSM_DATABASE=$OSM_DATABASE2
+fi
+
+read -p "General name/abbreviation prefix for the new source? (ENTER for no) " PFX_GENERAL
+if [ "$PFX_GENERAL" = "" ]; then
+  PFX_GENERAL="TMP"
 fi
 
 while true; do
@@ -32,7 +41,11 @@ while true; do
         [Yy]* )
         echo " Check the file prefixes at /tmp and select one: "
         ls /tmp/*_wd.osm
-        read -p "file.osm prefix? " pfx
+        read -p "file.osm prefix? (ENTER for '$PFX_GENERAL')" pfx
+        if [ "$pfx" = "" ]; then
+          pfx=$PFX_GENERAL
+        #else PFX_GENERAL=$pfx
+        fi
         sh src/step1-osmWd2csv_pre.sh < /tmp/${pfx}_wd.osm | php src/step2-osmWd2csv.php > /tmp/TMP.wdDump.raw.csv
         break;;
         [Nn]* )
@@ -51,12 +64,16 @@ psql "$OSM_DATABASE" -c "SELECT wdosm.alter_tmp_raw_csv('TMP')"
 echo '-- CSV file, number of rows to be parsed, '
 psql "$OSM_DATABASE" -c "SELECT COUNT(*) as n_lines FROM wdosm.tmp_raw_csv"
 
-echo '-- INSERTING AND PARSING (..wait..) -- '
-psql "$OSM_DATABASE" -c "SELECT wdosm.parse_insert( wdosm.get_sid() )"
+echo "-- INSERTING AND PARSING ($WAIT) --"
+if [ "$WAIT" = "..wait.." ]; then
+  psql "$OSM_DATABASE" -c "SELECT wdosm.parse_insert( wdosm.get_sid('$PFX_GENERAL') )"
+  psql "$OSM_DATABASE" < src/step4-osmWd_statistcs.sql
+else
+  echo "psql \"$OSM_DATABASE\" -c \"SELECT wdosm.parse_insert( wdosm.get_sid('$PFX_GENERAL') )\" & "
+fi
 
 # not run step3a-osmWd_parseRaw.sql
 # empty psql work < src/step3b-osmWd_expCsv.sql
-psql "$OSM_DATABASE" < src/step4-osmWd_statistcs.sql
 # later psql work < src/step5-osmWd_extraReports.sql
 
 echo ""

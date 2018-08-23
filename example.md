@@ -262,3 +262,111 @@ r,1988258,Q315548:84
 r,1988261,Q315548:49
 r,1988263,Q315548:50
 ```
+## Example 5
+run `sh src/make.sh` ... Suppose the second time running. Results of the interaction (see answers of the questions).
+
+```
+------------------
+--- Makeing simple-osmWd2csv files and preparing database! ---
+------------------
+ (ENTER for 'postgres://postgres:postgres@localhost:5432/work') Database full connection-string?
+postgres://postgres:postgres@localhost:5432/work2
+
+General name/abbreviation prefix for the new source? (ENTER for no)
+GW
+
+ Restart all at database 'postgres://postgres:postgres@localhost:5432/work2'? (y/n)
+n
+
+ (check all fine, no erros above?)
+ Do you wish to parse an .osm file? (y/n)
+y
+
+ Check the file prefixes at /tmp and select one:
+/tmp/BR_wd.osm	/tmp/GW_wd.osm	/tmp/LI_wd.osm
+
+file.osm prefix? (ENTER for 'GW')
+
+Final parsing process at database 'postgres://postgres:postgres@localhost:5432/work2'...
+-- Creating main table from wdDump.raw.csv ...
+                     alter_tmp_raw_csv                      
+------------------------------------------------------------
+ -- table wdosm.tmp_raw_csv using '/tmp/TMP.wdDump.raw.csv'
+(1 registro)
+
+-- CSV file, number of rows to be parsed,
+ n_lines
+---------
+    1251
+(1 registro)
+
+-- INSERTING AND PARSING (..wait..) --
+             parse_insert              
+---------------------------------------
+ -- files CSVs saved, see ls /tmp/TMP*
+(1 registro)
+
+-- Profile, the totals about direct Wikidata ID (wd_id) use in OSM elements:
+ region | osm_type | n_total | n_direct | n_indirect | n_indirect3 | has_wdmembs3
+--------+----------+---------+----------+------------+-------------+--------------
+ GW     | n        |      42 |       42 |          0 |           0 |            0
+ GW     | r        |      44 |       43 |          0 |           0 |            0
+ GW     | w        |    1165 |       30 |          0 |           0 |            0
+ LI     | n        |      38 |       38 |          0 |           0 |            0
+ LI     | r        |      55 |       47 |          0 |           0 |            0
+ LI     | w        |     696 |       10 |          0 |           0 |            0
+(6 registros)
+
+-- Element type distribution over Wikidata use:
+ region | element_type | Elements with wd_id | With distinct wd_id | % distincts
+--------+--------------+---------------------+---------------------+-------------
+ GW     | n            |                  42 |                  42 |         100
+ GW     | r            |                  43 |                  42 |          98
+ GW     | w            |                  30 |                  30 |         100
+ LI     | n            |                  38 |                  38 |         100
+ LI     | r            |                  47 |                  47 |         100
+ LI     | w            |                  10 |                  10 |         100
+(6 registros)
+
+-- Report, all profile of Wikidata (wd_id) use:
+ region | osm_type |  feature_type   | n_direct | n_total | Directs
+--------+----------+-----------------+----------+---------+---------
+ GW     | n        |                 |       42 |      42 | 100%
+ GW     | r        | boundary        |       32 |      32 | 100%
+ GW     | r        | multipolygon    |        6 |       7 | 86%
+ GW     | r        | waterway        |        4 |       4 | 100%
+ GW     | r        | route           |        1 |       1 | 100%
+ GW     | w        |                 |       23 |    1077 | 2%
+ GW     | w        | residential     |        6 |       6 | 100%
+ GW     | w        | tertiary        |        1 |       4 | 25%
+ GW     | w        | primary         |        0 |      77 | 0%
+ GW     | w        | service         |        0 |       1 | 0%
+ LI     | n        |                 |       38 |      38 | 100%
+ LI     | r        | boundary        |       38 |      38 | 100%
+ LI     | r        | multipolygon    |        3 |       3 | 100%
+ LI     | r        | route           |        3 |       8 | 38%
+ LI     | r        | classification  |        1 |       1 | 100%
+ LI     | r        | superroute      |        1 |       3 | 33%
+ LI     | r        | waterway        |        1 |       1 | 100%
+ LI     | r        | multilinestring |        0 |       1 | 0%
+ LI     | w        |                 |        9 |     391 | 2%
+ LI     | w        | track           |        1 |      21 | 5%
+ LI     | w        | path            |        0 |      28 | 0%
+ LI     | w        | primary         |        0 |      88 | 0%
+ LI     | w        | residential     |        0 |      10 | 0%
+ LI     | w        | secondary       |        0 |     157 | 0%
+ LI     | w        | service         |        0 |       1 | 0%
+(25 registros)
+
+A node with references will be a bug: check no one,
+ osm_id
+--------
+(0 registro)
+
+done!
+Use psql postgres://postgres:postgres@localhost:5432/work2 to check the wdosm SQL schema
+```
+
+Edit the `make.sh` script changing `WAIT="..wait.."` to any other thing as `please copy/paste and do yourself`, to avoid long wait: you can copy/paste a bath (`&`) command to do the same.
+
+Edit the `make.sh` script changing `OSM_DATABASE2` to any other valid PostgreSQL connection.
