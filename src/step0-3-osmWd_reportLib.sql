@@ -25,6 +25,52 @@ CREATE FUNCTION wdosm.check_same_wdid_refcenter(
 $f$ language SQL IMMUTABLE;
 
 
+-- BASIC URL solvers:
+
+CREATE or replace FUNCTION wdosm.osm_url(p_osm_type char, p_id bigint) RETURNS text AS $f$
+    SELECT CASE
+      WHEN j->$1 IS NULL or $2 IS NULL THEN NULL
+      ELSE concat('https://www.openstreetmap.org/',j->>$1,'/',$2::text)
+      END
+    FROM (SELECT '{"n":"node","w":"way","r":"relation"}'::jsonb) t(j)
+$f$ language SQL IMMUTABLE;
+
+CREATE or replace FUNCTION wdosm.wd2osm(
+  p_wd_id bigint, p_geohash text default NULL
+) RETURNS table(osm_type char, osm_id bigint) AS $f$
+  SELECT *
+  FROM (
+    SELECT distinct osm_type, osm_id
+    FROM wdosm.main
+    WHERE CASE
+      WHEN $2 IS NULL THEN $1=wd_id
+      ELSE centroid LIKE ($2||'%')
+      END
+    LIMIT 3
+  ) t
+  ORDER BY osm_type DESC,1
+  LIMIT 1
+$f$ language SQL IMMUTABLE;
+
+CREATE or replace FUNCTION wdosm.redir_by_wdid(
+  p_type text, p_id text, p_sid int default 1
+) RETURNS text AS $f$
+  SELECT CASE
+    WHEN p_type='q' or p_type='Q' THEN (
+      SELECT wdosm.osm_url(osm_type,osm_id) FROM wdosm.wd2osm(p_id::bigint)
+    ) WHEN p_type='c' or p_type='geohash' THEN (
+      SELECT wdosm.osm_url(osm_type,osm_id) FROM wdosm.wd2osm(NULL,p_id)
+    ) ELSE (
+      SELECT wdosm.osm_url(osm_type, osm_id)
+      FROM wdosm.main WHERE osm_type=p_type::char AND osm_id=p_id::bigint
+    )
+    END
+$f$ language SQL IMMUTABLE;
+
+CREATE or replace FUNCTION wdosm.redir_by_wdid(p_type text, p_id bigint) RETURNS text AS $wrap$
+  SELECT wdosm.redir_by_wdid($1,$2::text)
+$wrap$ language SQL IMMUTABLE;
+
 -- XHTML formaters:
 
 CREATE or replace FUNCTION xhtml_ahref(p_a text, p_url text) RETURNS xml AS $f$

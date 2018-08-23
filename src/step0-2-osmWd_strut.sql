@@ -27,7 +27,7 @@ $$;
 
 CREATE FUNCTION wdosm.get_sid( text DEFAULT '', text DEFAULT '', text DEFAULT '' ) RETURNS int AS $f$
   INSERT INTO wdosm.source (abbrev,name,curator) VALUES (
-     (SELECT CASE WHEN $1>'' THEN $1 ELSE 'inst-test-num'||round(EXTRACT(EPOCH FROM now())*1000-1534700000000)::text END)
+     (SELECT CASE WHEN $1>'' THEN $1 ELSE 'inst-test-num'||round(EXTRACT(EPOCH FROM now())*1000-153470000000)::text END)
      ,(SELECT CASE WHEN $2>'' THEN $2 ELSE 'Installation tests, CHANGE this title' END)
      ,(SELECT CASE WHEN $3>'' THEN $3 ELSE 'no-curation, CHANGE here' END)
    ) RETURNING id
@@ -246,7 +246,8 @@ CREATE INDEX expand_step1_idx2 ON wdosm.kx_step1 (ref2);
 CREATE or replace FUNCTION wdosm.parse_insert(
   p_source_id int,  -- must greater than 0
   p_expcsv boolean DEFAULT true, -- to export CSV files
-  p_delkxs boolean DEFAULT true -- to delete caches
+  p_delkxs boolean DEFAULT true, -- to delete caches
+  p_stop_level integer DEFAULT 5 -- avoid long chains membership and long CPU time.
 ) RETURNS text AS $f$
 
   DELETE FROM wdosm.kx_step1;
@@ -327,13 +328,13 @@ CREATE or replace FUNCTION wdosm.parse_insert(
              ,p.all_refs || array[CASE WHEN c.wd_id IS NULL THEN 1 ELSE c.wd_id END,c.osm_id] -- CASE for debug nuls
       FROM wdosm.tmp_expanded c JOIN tree p
         ON  c.ref_id = p.osm_id AND c.osm_id!=p.osm_id  -- c.ref_type=p.osm_type AND
-           AND array_length(p.all_refs,1)<100 -- to exclude the endless loops
+           AND array_length(p.all_refs,1)<p_stop_level -- to exclude the endless loops
     ) --end with
     SELECT osm_type, osm_id, array_agg_cat(all_refs) as pairs
     FROM (
       SELECT distinct osm_type, osm_id, all_refs
       FROM tree
-      WHERE array_length(all_refs,1)>1
+      WHERE array_length(all_refs,1)>1 -- ignores initial array[0,0].
     ) t
     GROUP BY 1,2
     ORDER BY 1,2

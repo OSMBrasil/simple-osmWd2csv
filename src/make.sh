@@ -1,19 +1,25 @@
 printf "\n------------------"
 printf "\n--- Makeing simple-osmWd2csv files and preparing database! ---"
 printf "\n------------------\n"
+# migrar para makefile. Interartividade conforme https://stackoverflow.com/a/3743821/287948
 
 cp samples/LI*.* /tmp   # only to mount
 
+read -p " Database? (ENTER for 'work') " OSM_DATABASE
+if [ "$OSM_DATABASE" = "" ]; then
+  OSM_DATABASE="work"
+fi
+
 while true; do
-    read -p " Restart all at database 'work'? (y/n) " yn
+    read -p " Restart all at database '$OSM_DATABASE'? (y/n) " yn
     case $yn in
         [Nn]* )
         break;;
         [Yy]* )
-        echo "Preparing database 'work'..."
-        psql -U postgres work < src/step0-1-osmWd_libPub.sql
-        psql -U postgres work < src/step0-2-osmWd_strut.sql
-        psql -U postgres work < src/step0-3-osmWd_reportLib.sql
+        echo "Preparing database '$OSM_DATABASE'..."
+        psql -U postgres "$OSM_DATABASE" < src/step0-1-osmWd_libPub.sql
+        psql -U postgres "$OSM_DATABASE" < src/step0-2-osmWd_strut.sql
+        psql -U postgres "$OSM_DATABASE" < src/step0-3-osmWd_reportLib.sql
         break;;
         * ) echo "Please answer yes or no. ";;
     esac
@@ -39,22 +45,22 @@ while true; do
     esac
 done
 
-echo "Final parsing process at database 'work'..."
+echo "Final parsing process at database '$OSM_DATABASE'..."
 echo '-- Creating main table from wdDump.raw.csv ... '
-psql -U postgres work -c "SELECT wdosm.alter_tmp_raw_csv('TMP')"
+psql -U postgres "$OSM_DATABASE" -c "SELECT wdosm.alter_tmp_raw_csv('TMP')"
 echo '-- CSV file, number of rows to be parsed, '
-psql -U postgres work -c "SELECT COUNT(*) as n_lines FROM wdosm.tmp_raw_csv"
+psql -U postgres "$OSM_DATABASE" -c "SELECT COUNT(*) as n_lines FROM wdosm.tmp_raw_csv"
 
 echo '-- INSERTING AND PARSING (..wait..) -- '
-psql -U postgres work -c "SELECT wdosm.parse_insert( wdosm.get_sid() )"
+psql -U postgres "$OSM_DATABASE" -c "SELECT wdosm.parse_insert( wdosm.get_sid() )"
 
 # not run step3a-osmWd_parseRaw.sql
 # empty psql -U postgres work < src/step3b-osmWd_expCsv.sql
-psql -U postgres work < src/step4-osmWd_statistcs.sql
+psql -U postgres "$OSM_DATABASE" < src/step4-osmWd_statistcs.sql
 # later psql -U postgres work < src/step5-osmWd_extraReports.sql
 
 echo ""
 echo "done!"
-echo "Use psql -U postgres work to check the wdosm SQL schema"
+echo "Use psql -U postgres $OSM_DATABASE to check the wdosm SQL schema"
 echo ""
 # end
