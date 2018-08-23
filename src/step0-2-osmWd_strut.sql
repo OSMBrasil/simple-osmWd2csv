@@ -255,7 +255,7 @@ CREATE FUNCTION wdosm.main_update_fast(p_source_id int) RETURNS void AS $f$
   UPDATE wdosm.main
   SET  wd_member_ids = wdosm.main_fast_ref_check(osm_type,osm_id)
   WHERE sid=p_source_id
-$f$ language SQL strict;
+$f$ language SQL strict VOLATILE;
 
 CREATE FUNCTION wdosm.main_update_complete(
   p_source_id int,
@@ -287,7 +287,7 @@ CREATE FUNCTION wdosm.main_update_complete(
     ORDER BY 1,2
   ) t2
   WHERE main.sid=p_source_id AND t2.osm_id=main.osm_id AND t2.osm_type=main.osm_type
-$f$ language SQL strict;
+$f$ language SQL strict VOLATILE;
 
 
 /**
@@ -370,30 +370,9 @@ CREATE or replace FUNCTION wdosm.parse_insert(
 
   SELECT wdosm.output_to_csv(p_source_id,'TMP'); -- WHERE p_expcsv;  -- retorno da funcao
 
-$f$ LANGUAGE SQL;
+$f$ LANGUAGE SQL VOLATILE;
 
 ---- --- ---
 
 SELECT wdosm.alter_tmp_raw_csv('LI',false) AS fake_load_trash;
 -- LI is a sample, step3 will use correct.
-
-
-/* OLD
-CREATE or replace FUNCTION wdosm.get_member_wds(
-  p_reftype char, p_refids bigint[]
-) RETURNS  TABLE (wd_ids jsonb, osm_ids bigint[], osm_type char) AS $f$
-  SELECT
-    CASE WHEN jsonb_typeof(wd_ids)='object' THEN wd_ids ELSE NULL::jsonb END
-    ,osm_ids, p_reftype
-  FROM (
-    SELECT jsonb_summable_merge(array_agg(j_wdid)) wd_ids, array_agg(osm_id) osm_ids
-    FROM (
-      SELECT  osm_id,
-        CASE WHEN wd_id>0 THEN jsonb_build_object(osm_type ||':Q'|| wd_id::text, 1) ELSE NULL::jsonb END  j_wdid
-      FROM wdosm.tmp_raw_filtered
-      WHERE osm_type = p_reftype AND osm_id = ANY(p_refids)
-    ) t1
-  ) t2
-$f$ language SQL IMMUTABLE;
-
-*/
