@@ -202,17 +202,14 @@ $$;
 -- -- -- -- -- --
 -- -- -- -- -- --
 
-
 CREATE FUNCTION wdosm.wd_id_group(  bigint[] ) RETURNS JSONB AS $f$
   -- convert the array[array[wd_id,osm_id]]::bigint[]
-  -- SELECT array_to_string(array_agg(x||':'||n),' ')
-  SELECT jsonb_summable_aggmerge( jsonb_build_object('Q'||x::text,n) )
+  SELECT jsonb_object_agg('Q'||x::text,n)
+  -- old jsonb_summable_aggmerge( jsonb_build_object('Q'||x::text,n) )
   FROM (
-    SELECT x[1] as x, count(*) as n  --, array_agg(x[2])
-    FROM unnest_2d_1d($1) t(x)
-    WHERE x is not null AND x[1]>0  -- so, and not null
+    SELECT COALESCE(x[1],0) as x, count(*) as n  --, array_agg(x[2])
+    FROM unnest_2d_1d(CASE WHEN $1='{}'::bigint[] THEN NULL ELSE $1 END) t(x)
     GROUP BY 1
-    -- ORDER BY 1  jsonb not presrve.
   ) t2
 $f$ language SQL strict IMMUTABLE;
 
@@ -220,7 +217,7 @@ CREATE FUNCTION wdosm.wd_id_group_vals(  bigint[] ) RETURNS bigint[] AS $f$
   SELECT array_agg(x)
   FROM (
     SELECT DISTINCT x[2] as x
-    FROM unnest_2d_1d($1) t(x)
+    FROM unnest_2d_1d(CASE WHEN $1='{}'::bigint[] THEN NULL ELSE $1 END) t(x)
     WHERE x[2]>1  -- so, and not null
     GROUP BY 1
     ORDER BY 1
@@ -232,13 +229,66 @@ CREATE FUNCTION wdosm.get_source_abbrev( int ) RETURNS text AS $f$
   SELECT abbrev FROM wdosm.source WHERE id=$1
 $f$ language SQL strict IMMUTABLE;
 
-
 CREATE TABLE wdosm.kx_step1( -- for wdosm.parse_insert
     osm_type char(1), osm_id bigint, is_int boolean,
     ref_type char(1), ref text, is_ref boolean, ref2 bigint
 );
 CREATE INDEX expand_step1_idx1 ON wdosm.kx_step1 (osm_type, osm_id, ref_type, ref);
 CREATE INDEX expand_step1_idx2 ON wdosm.kx_step1 (ref2);
+
+CREATE FUNCTION wdosm.main_fast_ref_check(
+  p_osm_type char, p_osm_id bigint
+) RETURNS JSONb AS $f$
+    SELECT wdosm.wd_id_group( array_agg_cat(all_refs) )
+    FROM (
+      SELECT DISTINCT array[wd_id,osm_id] as all_refs
+      FROM wdosm.tmp_expanded e INNER JOIN (
+        SELECT ref_type, ref_id
+        FROM wdosm.tmp_expanded
+        WHERE osm_type=p_osm_type AND osm_id=p_osm_id
+      ) u ON e.osm_type=u.ref_type AND e.osm_id=u.ref_id
+      WHERE e.wd_id IS NOT NULL AND e.wd_id>0
+    ) t1
+$f$ language SQL strict IMMUTABLE;
+
+CREATE FUNCTION wdosm.main_update_fast(p_source_id int) RETURNS void AS $f$
+  UPDATE wdosm.main
+  SET  wd_member_ids = wdosm.main_fast_ref_check(osm_type,osm_id)
+  WHERE sid=p_source_id
+$f$ language SQL strict;
+
+CREATE FUNCTION wdosm.main_update_complete(
+  p_source_id int,
+  p_stop_level integer DEFAULT 5
+) RETURNS void AS $f$
+  UPDATE wdosm.main
+  SET  wd_member_ids = wdosm.wd_id_group(pairs)
+      ,used_ref_ids  = array_distinct_sort(wdosm.wd_id_group_vals(pairs))
+  FROM (
+    WITH RECURSIVE tree as (
+      SELECT osm_type,osm_id, wd_id, ref_type, ref_id,
+             array[array[0,0]]::bigint[] as all_refs
+      FROM wdosm.tmp_expanded
+      UNION ALL
+      SELECT c.osm_type, c.osm_id, c.wd_id, c.ref_type, c.ref_id
+             ,p.all_refs || array[c.wd_id,c.osm_id]
+             -- debug array[CASE WHEN c.wd_id IS NULL THEN 1 ELSE c.wd_id END,c.osm_id]
+      FROM wdosm.tmp_expanded c JOIN tree p
+        ON  c.ref_type=p.osm_type AND c.ref_id = p.osm_id AND c.osm_id!=p.osm_id
+           AND array_length(p.all_refs,1)<p_stop_level -- to exclude the endless loops
+    ) --end with
+    SELECT osm_type, osm_id, array_agg_cat(all_refs) as pairs
+    FROM (
+      SELECT distinct osm_type, osm_id, all_refs
+      FROM tree
+      WHERE array_length(all_refs,1)>1 -- ignores initial array[0,0].
+    ) t
+    GROUP BY 1,2
+    ORDER BY 1,2
+  ) t2
+  WHERE main.sid=p_source_id AND t2.osm_id=main.osm_id AND t2.osm_type=main.osm_type
+$f$ language SQL strict;
+
 
 /**
  * MAIN parse process.
@@ -247,6 +297,7 @@ CREATE or replace FUNCTION wdosm.parse_insert(
   p_source_id int,  -- must greater than 0
   p_expcsv boolean DEFAULT true, -- to export CSV files
   p_delkxs boolean DEFAULT true, -- to delete caches
+  p_update_method text DEFAULT 'fast',
   p_stop_level integer DEFAULT 5 -- avoid long chains membership and long CPU time.
 ) RETURNS text AS $f$
 
@@ -278,16 +329,6 @@ CREATE or replace FUNCTION wdosm.parse_insert(
       ,SUM(count_ref_ids) count_origref_ids -- original from file.OSM or pre-parser
       ,SUM(array_length(ref_ids,1)) count_parseref_ids -- as useful ref_ids
     FROM (
-      /*  typical distribution of the query (before summarize ref_type)
-      ref_type | count | ref_ids
-      r        |    67 |     861
-      w        |  3390 |  109577
-      n        | 59145 | 1834782
-      h        | 27328 |
-      Q        | 10416 |
-      c        |  6363 |
-      t        |  3404 |
-      */
       SELECT osm_type, osm_id, ref_type
         ,SUM(CASE WHEN is_ref THEN 1::int ELSE 0::int END)  count_ref_ids -- see also n
         ,array_distinct_sort( array_agg(ref2) FILTER (
@@ -315,37 +356,16 @@ CREATE or replace FUNCTION wdosm.parse_insert(
       ORDER BY 1,2,3,4,5  -- not need
   ;
 
-  UPDATE wdosm.main
-  SET  wd_member_ids = wdosm.wd_id_group(pairs)
-      ,used_ref_ids  = array_distinct_sort(wdosm.wd_id_group_vals(pairs))
-  FROM (
-    WITH RECURSIVE tree as (
-      SELECT osm_type,osm_id, wd_id, ref_type, ref_id,
-             array[array[0,0]]::bigint[] as all_refs
-      FROM wdosm.tmp_expanded
-      UNION ALL
-      SELECT c.osm_type, c.osm_id, c.wd_id, c.ref_type, c.ref_id
-             ,p.all_refs || array[CASE WHEN c.wd_id IS NULL THEN 1 ELSE c.wd_id END,c.osm_id] -- CASE for debug nuls
-      FROM wdosm.tmp_expanded c JOIN tree p
-        ON  c.ref_id = p.osm_id AND c.osm_id!=p.osm_id  -- c.ref_type=p.osm_type AND
-           AND array_length(p.all_refs,1)<p_stop_level -- to exclude the endless loops
-    ) --end with
-    SELECT osm_type, osm_id, array_agg_cat(all_refs) as pairs
-    FROM (
-      SELECT distinct osm_type, osm_id, all_refs
-      FROM tree
-      WHERE array_length(all_refs,1)>1 -- ignores initial array[0,0].
-    ) t
-    GROUP BY 1,2
-    ORDER BY 1,2
-  ) t2
-  WHERE main.sid=p_source_id AND t2.osm_id=main.osm_id AND t2.osm_type=main.osm_type
-  ;
+  DELETE FROM wdosm.kx_step1 WHERE p_delkxs;
+
+  SELECT CASE  -- dependents on tmp_expanded and updates wdosm.main
+    WHEN p_update_method='fast' THEN wdosm.main_update_fast(p_source_id)
+    ELSE wdosm.main_update_complete(p_source_id,p_stop_level)
+  END;
 
   UPDATE wdosm.main SET wd_member_ids=NULL WHERE jsonb_typeof(wd_member_ids)='null';
   UPDATE wdosm.main SET used_ref_ids=NULL  WHERE used_ref_ids='{}'::bigint[];
 
-  DELETE FROM wdosm.kx_step1 WHERE p_delkxs;
   DELETE FROM wdosm.tmp_expanded WHERE p_delkxs;
 
   SELECT wdosm.output_to_csv(p_source_id,'TMP'); -- WHERE p_expcsv;  -- retorno da funcao
